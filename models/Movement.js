@@ -1,42 +1,49 @@
 const mongoose = require('mongoose');
 
 const movementSchema = new mongoose.Schema({
-    ingresos: {
-        efectivo: {
-            pesos: Number,
-            dolares: Number,
-            euros: Number,
-        },
-        tarjeta: {
-            debitoCredito: Number,
-            virtual: Number,
-            transferencias: Number,
-        },
+  ingreso: {
+    tipo: {
+      type: String, // E.g., "Efectivo" o "Tarjeta"
+      enum: ["Efectivo", "Tarjeta"], // Opciones permitidas
+      required: true,
     },
-    fechaPago: { type: Date, required: true }, // Fecha de pago
-    nombre: { type: String, required: true }, // Nombre del cliente
-    habitacion: {
-        numero: { type: Number, required: true }, // Número de habitación
-        tipo: {
-            type: String,
-            enum: ['Junior Suite Tapanko', 'Master Suite', 'Suite Deluxe Standard'], // Tipos disponibles
-            required: true,
-        },
+    subtipo: {
+      type: String, // E.g., "Pesos", "Débito/Crédito", etc.
+      enum: [
+        "Pesos", "Dólares", "Euros", // Subtipos para efectivo
+        "Débito/Crédito", "Virtual", "Transferencias", // Subtipos para tarjeta
+      ],
+      required: true,
     },
-    checkIn: { type: Date, required: true }, // Fecha de entrada
-    checkOut: { type: Date, required: true }, // Fecha de salida
-    noches: { type: Number, required: true }, // Noches calculadas
-    ota: {
-        type: String,
-        enum: ['Booking', 'Expedia', 'Directa'], // Origen de la reservación
-        required: true,
+    monto: {
+      type: String, // Valor asociado al subtipo
+      required: true,
     },
-    autorizacion: { type: String, required: false }, // Número de autorización
-    concepto: {
-        type: String,
-        enum: ['Cobro de estancia', 'Amenidades'], // Opciones para el concepto
-        required: true,
+  },
+  fechaPago: { type: Date, required: true }, // Fecha de pago
+  nombre: { type: String, required: true }, // Nombre del cliente
+  habitacion: {
+    numero: { type: Number, required: true },
+    tipo: {
+      type: String,
+      enum: ["Junior Suite Tapanko", "Master Suite", "Suite Deluxe Standard"], // Tipos disponibles
+      required: true,
     },
+  },
+  checkIn: { type: Date, required: true },
+  checkOut: { type: Date, required: true },
+  noches: { type: Number, required: true },
+  ota: {
+    type: String,
+    enum: ["Booking", "Expedia", "Directa"], // Origen de la reservación
+    required: true,
+  },
+  autorizacion: { type: String, required: false },
+  concepto: {
+    type: String,
+    enum: ["Cobro de estancia", "Amenidades"],
+    required: true,
+  },
 });
 
-module.exports = mongoose.model('Movement', movementSchema);
+module.exports = mongoose.model("Movement", movementSchema);
