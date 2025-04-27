@@ -3,46 +3,42 @@ const Total = require('../models/Total'); // Modelo de totales
 
 const createMovement = async (req, res) => {
   try {
-    const { checkIn, checkOut, ingreso, ota, concepto } = req.body;
+    const { checkIn, checkOut, ingreso, fechaPago, nombre, habitacion, ota, concepto } = req.body;
 
-    // Validar que checkOut sea mayor que checkIn
     if (new Date(checkOut) <= new Date(checkIn)) {
-      return res.status(400).json({
-        message: "La fecha de check-out debe ser posterior a la de check-in.",
-      });
+      return res.status(400).json({ message: "La fecha de check-out debe ser posterior a la de check-in." });
     }
 
-    // Validar ingreso
-    if (!ingreso || !ingreso.tipo || !ingreso.subtipo || !ingreso.monto) {
-      return res.status(400).json({
-        message: "Todos los campos del ingreso son obligatorios (tipo, subtipo y monto).",
-      });
+    if (!ingreso || !ingreso.tipo || !ingreso.subtipo || !ingreso.montoTotal) {
+      return res.status(400).json({ message: "Todos los campos del ingreso son obligatorios." });
     }
 
-    // Calcular la cantidad de noches
-    const noches = Math.ceil(
-      (new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24)
-    );
+    const noches = Math.ceil((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24));
 
-    // Crear el movimiento
+    if (ingreso.tipo === "Tarjeta") {
+      ingreso.montoTotal = ingreso.autorizaciones.reduce((total, autorizacion) => {
+        return total + parseFloat(autorizacion.monto.replace(/\./g, "").replace(",", "."));
+      }, 0);
+    } else {
+      // ✅ **Tomar `montoTotal` tal cual viene del frontend, sin modificarlo**
+      ingreso.montoTotal = req.body.ingreso.montoTotal;
+    }
+
+    console.log("Monto Total guardado en MongoDB:", ingreso.montoTotal); // **Verificar antes de guardar**
+
     const newMovement = new Movement({
-      ...req.body,
-      noches, // Agregar el cálculo de noches al movimiento
+      ingreso,
+      fechaPago,
+      nombre,
+      habitacion,
+      checkIn,
+      checkOut,
+      noches,
+      ota,
+      concepto
     });
 
     await newMovement.save();
-
-    // Actualizar totales acumulativos
-    try {
-      await Total.findOneAndUpdate(
-        { tipoIngreso: `${ingreso.tipo} - ${ingreso.subtipo}` },
-        { $inc: { subtotal: ingreso.monto } },
-        { upsert: true, new: true }
-      );
-      console.log("Totales actualizados correctamente.");
-    } catch (error) {
-      console.error("Error al actualizar los totales acumulativos:", error.message);
-    }
 
     res.status(201).json(newMovement);
   } catch (error) {
@@ -50,6 +46,7 @@ const createMovement = async (req, res) => {
     res.status(500).json({ message: "Hubo un error al crear el movimiento", error: error.message });
   }
 };
+
 // Obtener todos los movimientos
 const getMovements = async (req, res) => {
   try {
@@ -64,59 +61,78 @@ const getMovements = async (req, res) => {
 const updateMovement = async (req, res) => {
   try {
     const { id } = req.params;
-    const { checkIn, checkOut, ingreso, ota, concepto } = req.body;
+    let { checkIn, checkOut, ingreso, ota, concepto, nombre } = req.body;
 
-    // Validar que checkOut sea mayor que checkIn
-    if (checkOut && checkIn && new Date(checkOut) <= new Date(checkIn)) {
+    console.log("Datos recibidos para actualizar:", req.body);
+
+    if (!ingreso || !ingreso.tipo || !ingreso.subtipo) {
       return res.status(400).json({
-        message: "La fecha de check-out debe ser posterior a la de check-in.",
+        message: "Todos los campos del ingreso son obligatorios.",
       });
     }
 
-    // Validar ingreso
-    if (!ingreso || !ingreso.tipo || !ingreso.subtipo || !ingreso.monto) {
+    // ✅ **Recalcular `montoTotal` si el ingreso es Tarjeta**
+    if (ingreso.tipo === "Tarjeta") {
+      ingreso.montoTotal = ingreso.autorizaciones.reduce((total, autorizacion) => {
+        return total + parseFloat(autorizacion.monto.replace(/\./g, "").replace(",", "."));
+      }, 0);
+
+      // ✅ **Aplicar formato con separador de miles antes de guardar**
+      ingreso.montoTotal = new Intl.NumberFormat("es-MX", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(ingreso.montoTotal);
+    } else {
+      let formattedMontoTotal = ingreso.montoTotal.toString().replace(/[^\d,.-]/g, "");
+      formattedMontoTotal = formattedMontoTotal.replace(/\./g, "").replace(",", ".");
+
+      ingreso.montoTotal = parseFloat(formattedMontoTotal).toFixed(2);
+
+      ingreso.montoTotal = new Intl.NumberFormat("es-MX", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(ingreso.montoTotal);
+    }
+
+    console.log("MontoTotal corregido antes de actualizar:", ingreso.montoTotal);
+
+    if (isNaN(parseFloat(ingreso.montoTotal))) {
+      console.error("🚨 Error: `montoTotal` no es válido después de la conversión:", ingreso.montoTotal);
       return res.status(400).json({
-        message: "Todos los campos del ingreso son obligatorios (tipo, subtipo y monto).",
+        message: "Error en la conversión de montoTotal. Verifica el formato de entrada.",
       });
     }
 
-    const previousMovement = await Movement.findById(id);
-
-    if (!previousMovement) {
-      return res.status(404).json({ message: "Movimiento no encontrado." });
-    }
-
-    // Restar el monto anterior de los totales
-    try {
-      await Total.findOneAndUpdate(
-        { tipoIngreso: `${previousMovement.ingreso.tipo} - ${previousMovement.ingreso.subtipo}` },
-        { $inc: { subtotal: -previousMovement.ingreso.monto } },
-        { new: true }
-      );
-
-      // Sumar el nuevo monto a los totales
-      await Total.findOneAndUpdate(
-        { tipoIngreso: `${ingreso.tipo} - ${ingreso.subtipo}` },
-        { $inc: { subtotal: ingreso.monto } },
-        { upsert: true, new: true }
-      );
-    } catch (error) {
-      console.error("Error al actualizar los totales acumulativos:", error.message);
-    }
-
-    // Actualizar el movimiento
     const updatedMovement = await Movement.findByIdAndUpdate(
       id,
-      { ...req.body },
-      { new: true }
+      { 
+        $set: {
+          checkIn,
+          checkOut,
+          ota,
+          concepto,
+          nombre, 
+          "ingreso.tipo": ingreso.tipo,
+          "ingreso.subtipo": ingreso.subtipo,
+          "ingreso.montoTotal": ingreso.montoTotal,
+          "ingreso.autorizaciones": ingreso.autorizaciones || [],
+        }
+      },
+      { new: true, runValidators: true }
     );
+
+    console.log("Movimiento actualizado correctamente:", updatedMovement);
 
     res.status(200).json(updatedMovement);
   } catch (error) {
-    console.error("Error al actualizar el movimiento:", error.message);
-    res.status(500).json({ message: "Hubo un error al actualizar el movimiento", error: error.message });
+    console.error("🚨 Error crítico al actualizar el movimiento:", error.message);
+    res.status(500).json({
+      message: "Hubo un error al actualizar el movimiento",
+      error: error.message,
+    });
   }
 };
+
 const deleteMovement = async (req, res) => {
   try {
     const { id } = req.params;
