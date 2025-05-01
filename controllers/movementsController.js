@@ -24,7 +24,7 @@ const createMovement = async (req, res) => {
       ingreso.montoTotal = req.body.ingreso.montoTotal;
     }
 
-    console.log("Monto Total guardado en MongoDB:", ingreso.montoTotal); // **Verificar antes de guardar**
+    
 
     const newMovement = new Movement({
       ingreso,
@@ -61,9 +61,9 @@ const getMovements = async (req, res) => {
 const updateMovement = async (req, res) => {
   try {
     const { id } = req.params;
-    let { checkIn, checkOut, ingreso, ota, concepto, nombre } = req.body;
+    let { nombre, fechaPago, checkIn, checkOut, ota, concepto, ingreso, habitacion } = req.body;
 
-    console.log("Datos recibidos para actualizar:", req.body);
+    
 
     if (!ingreso || !ingreso.tipo || !ingreso.subtipo) {
       return res.status(400).json({
@@ -71,13 +71,12 @@ const updateMovement = async (req, res) => {
       });
     }
 
-    // ✅ **Recalcular `montoTotal` si el ingreso es Tarjeta**
+    // ✅ **Corrección en el formato de `montoTotal`**
     if (ingreso.tipo === "Tarjeta") {
       ingreso.montoTotal = ingreso.autorizaciones.reduce((total, autorizacion) => {
         return total + parseFloat(autorizacion.monto.replace(/\./g, "").replace(",", "."));
       }, 0);
 
-      // ✅ **Aplicar formato con separador de miles antes de guardar**
       ingreso.montoTotal = new Intl.NumberFormat("es-MX", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
@@ -85,7 +84,6 @@ const updateMovement = async (req, res) => {
     } else {
       let formattedMontoTotal = ingreso.montoTotal.toString().replace(/[^\d,.-]/g, "");
       formattedMontoTotal = formattedMontoTotal.replace(/\./g, "").replace(",", ".");
-
       ingreso.montoTotal = parseFloat(formattedMontoTotal).toFixed(2);
 
       ingreso.montoTotal = new Intl.NumberFormat("es-MX", {
@@ -94,7 +92,7 @@ const updateMovement = async (req, res) => {
       }).format(ingreso.montoTotal);
     }
 
-    console.log("MontoTotal corregido antes de actualizar:", ingreso.montoTotal);
+    
 
     if (isNaN(parseFloat(ingreso.montoTotal))) {
       console.error("🚨 Error: `montoTotal` no es válido después de la conversión:", ingreso.montoTotal);
@@ -107,11 +105,14 @@ const updateMovement = async (req, res) => {
       id,
       { 
         $set: {
+          nombre,
+          fechaPago,
           checkIn,
           checkOut,
           ota,
           concepto,
-          nombre, 
+          "habitacion.numero": habitacion.numero,
+          "habitacion.tipo": habitacion.tipo,
           "ingreso.tipo": ingreso.tipo,
           "ingreso.subtipo": ingreso.subtipo,
           "ingreso.montoTotal": ingreso.montoTotal,
@@ -121,7 +122,7 @@ const updateMovement = async (req, res) => {
       { new: true, runValidators: true }
     );
 
-    console.log("Movimiento actualizado correctamente:", updatedMovement);
+    
 
     res.status(200).json(updatedMovement);
   } catch (error) {
