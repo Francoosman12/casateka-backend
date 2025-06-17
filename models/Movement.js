@@ -52,4 +52,14 @@ const movementSchema = new mongoose.Schema({
   },
 });
 
+movementSchema.pre("save", function (next) {
+  if (this.ingreso.subtipo === "Dólares") {
+    const monto = parseFloat(this.ingreso.montoTotal); // ✅ Convertir a número
+    if (!isNaN(monto)) {
+      this.ingreso.montoTotal = (monto * 18).toFixed(2); // ✅ Multiplicar por 18 y formatear
+    }
+  }
+  next();
+});
+
 module.exports = mongoose.model("Movement", movementSchema);
