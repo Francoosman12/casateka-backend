@@ -24,7 +24,7 @@ const createMovement = async (req, res) => {
       ingreso.montoTotal = req.body.ingreso.montoTotal;
     }
 
-    
+    console.log("Monto Total guardado en MongoDB:", ingreso.montoTotal); // **Verificar antes de guardar**
 
     const newMovement = new Movement({
       ingreso,
@@ -71,25 +71,27 @@ const updateMovement = async (req, res) => {
       });
     }
 
-    // ✅ Obtener el movimiento existente para mantener su formato de monto
-    const existingMovement = await Movement.findById(id);
-    if (!existingMovement) {
-      return res.status(404).json({ message: "El movimiento no existe." });
-    }
-
-    // ✅ Si el ingreso es Tarjeta, recalcular `montoTotal`
+    // ✅ **Recalcular `montoTotal` si el ingreso es Tarjeta**
     if (ingreso.tipo === "Tarjeta") {
       ingreso.montoTotal = ingreso.autorizaciones.reduce((total, autorizacion) => {
         return total + parseFloat(autorizacion.monto.replace(/\./g, "").replace(",", "."));
       }, 0);
-    } else {
-      // ✅ **Mantener el formato original al actualizar**
-      ingreso.montoTotal = parseFloat(ingreso.montoTotal.toString().replace(/[^\d.-]/g, ""));
-    }
 
-    // ✅ Si el subtipo es "Dólares", mantener el monto original
-    if (ingreso.subtipo === "Dólares") {
-      ingreso.montoTotal = existingMovement.ingreso.montoTotal; // ✅ Mantener monto sin modificación
+      // ✅ **Aplicar formato con separador de miles antes de guardar**
+      ingreso.montoTotal = new Intl.NumberFormat("es-MX", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(ingreso.montoTotal);
+    } else {
+      let formattedMontoTotal = ingreso.montoTotal.toString().replace(/[^\d,.-]/g, "");
+      formattedMontoTotal = formattedMontoTotal.replace(/\./g, "").replace(",", ".");
+
+      ingreso.montoTotal = parseFloat(formattedMontoTotal).toFixed(2);
+
+      ingreso.montoTotal = new Intl.NumberFormat("es-MX", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(ingreso.montoTotal);
     }
 
     console.log("MontoTotal corregido antes de actualizar:", ingreso.montoTotal);
@@ -160,7 +162,6 @@ const deleteMovement = async (req, res) => {
     res.status(500).json({ message: "Hubo un error al eliminar el movimiento", error: error.message });
   }
 };
-
 module.exports = {
   createMovement,
   getMovements,
