@@ -61,9 +61,9 @@ const getMovements = async (req, res) => {
 const updateMovement = async (req, res) => {
   try {
     const { id } = req.params;
-    let { nombre, fechaPago, checkIn, checkOut, ota, concepto, ingreso, habitacion } = req.body;
+    let { checkIn, checkOut, ingreso, ota, concepto, nombre } = req.body;
 
-    
+    console.log("Datos recibidos para actualizar:", req.body);
 
     if (!ingreso || !ingreso.tipo || !ingreso.subtipo) {
       return res.status(400).json({
@@ -71,28 +71,28 @@ const updateMovement = async (req, res) => {
       });
     }
 
-    // ✅ **Corrección en el formato de `montoTotal`**
+    // ✅ Obtener el movimiento existente para mantener su formato de monto
+    const existingMovement = await Movement.findById(id);
+    if (!existingMovement) {
+      return res.status(404).json({ message: "El movimiento no existe." });
+    }
+
+    // ✅ Si el ingreso es Tarjeta, recalcular `montoTotal`
     if (ingreso.tipo === "Tarjeta") {
       ingreso.montoTotal = ingreso.autorizaciones.reduce((total, autorizacion) => {
         return total + parseFloat(autorizacion.monto.replace(/\./g, "").replace(",", "."));
       }, 0);
-
-      ingreso.montoTotal = new Intl.NumberFormat("es-MX", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      }).format(ingreso.montoTotal);
     } else {
-      let formattedMontoTotal = ingreso.montoTotal.toString().replace(/[^\d,.-]/g, "");
-      formattedMontoTotal = formattedMontoTotal.replace(/\./g, "").replace(",", ".");
-      ingreso.montoTotal = parseFloat(formattedMontoTotal).toFixed(2);
-
-      ingreso.montoTotal = new Intl.NumberFormat("es-MX", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      }).format(ingreso.montoTotal);
+      // ✅ **Mantener el formato original al actualizar**
+      ingreso.montoTotal = parseFloat(ingreso.montoTotal.toString().replace(/[^\d.-]/g, ""));
     }
 
-    
+    // ✅ Si el subtipo es "Dólares", mantener el monto original
+    if (ingreso.subtipo === "Dólares") {
+      ingreso.montoTotal = existingMovement.ingreso.montoTotal; // ✅ Mantener monto sin modificación
+    }
+
+    console.log("MontoTotal corregido antes de actualizar:", ingreso.montoTotal);
 
     if (isNaN(parseFloat(ingreso.montoTotal))) {
       console.error("🚨 Error: `montoTotal` no es válido después de la conversión:", ingreso.montoTotal);
@@ -105,14 +105,11 @@ const updateMovement = async (req, res) => {
       id,
       { 
         $set: {
-          nombre,
-          fechaPago,
           checkIn,
           checkOut,
           ota,
           concepto,
-          "habitacion.numero": habitacion.numero,
-          "habitacion.tipo": habitacion.tipo,
+          nombre, 
           "ingreso.tipo": ingreso.tipo,
           "ingreso.subtipo": ingreso.subtipo,
           "ingreso.montoTotal": ingreso.montoTotal,
@@ -122,7 +119,7 @@ const updateMovement = async (req, res) => {
       { new: true, runValidators: true }
     );
 
-    
+    console.log("Movimiento actualizado correctamente:", updatedMovement);
 
     res.status(200).json(updatedMovement);
   } catch (error) {
@@ -163,6 +160,7 @@ const deleteMovement = async (req, res) => {
     res.status(500).json({ message: "Hubo un error al eliminar el movimiento", error: error.message });
   }
 };
+
 module.exports = {
   createMovement,
   getMovements,
